@@ -1,0 +1,299 @@
+/* Ludopointe — ambiance plateau de jeu : papier, bois, feutrine. */
+
+:root {
+  color-scheme: light dark;
+  --fond: #f3ecdd;
+  --trame: rgba(90, 70, 40, 0.13);
+  --carte: #fffaf0;
+  --bord: #dccfb4;
+  --tranche: #c9b995;
+  --encre: #2a2830;
+  --encre-douce: #6a6257;
+  --travail: #2f6b4f;
+  --travail-tranche: #1f4a36;
+  --pause: #b96f16;
+  --pause-tranche: #8a5210;
+  --depart: #a5402b;
+  --depart-tranche: #762c1d;
+  --sur-couleur: #fffaf0;
+  --rayon: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fond: #1e2024;
+    --trame: rgba(255, 240, 210, 0.07);
+    --carte: #282b30;
+    --bord: #3a3e45;
+    --tranche: #15171a;
+    --encre: #f1eadb;
+    --encre-douce: #a9a294;
+    --travail: #3f8a67;
+    --travail-tranche: #28604a;
+    --pause: #c98427;
+    --pause-tranche: #94601a;
+    --depart: #c25a43;
+    --depart-tranche: #8c3d2c;
+    --sur-couleur: #fffaf0;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--encre);
+  background-color: var(--fond);
+  /* Trame de points, comme un plateau à trous. */
+  background-image: radial-gradient(var(--trame) 1.5px, transparent 1.6px);
+  background-size: 22px 22px;
+}
+
+.entete, main { max-width: 440px; margin-inline: auto; }
+
+h1, h2, p, ol, ul { margin: 0; }
+ol, ul { padding: 0; list-style: none; }
+[hidden] { display: none !important; }
+
+/* ---------- En-tête ---------- */
+
+.entete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) 2px 10px;
+}
+.logo { width: 22px; height: 22px; fill: var(--depart); flex: none; }
+.entete h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.01em; }
+.horloge {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--encre-douce);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Carte de pointage ---------- */
+
+.carte {
+  background: var(--carte);
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon);
+  box-shadow: 0 4px 0 var(--tranche);
+  padding: 16px 16px 14px;
+  text-align: center;
+}
+
+.etat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 10px;
+  border: 1px solid var(--bord);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.etat::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--encre-douce);
+}
+.etat[data-etat="au_travail"]::before { background: var(--travail); }
+.etat[data-etat="en_pause"]::before { background: var(--pause); }
+.etat[data-etat="terminee"]::before { background: var(--depart); }
+
+.compteur {
+  margin-top: 6px;
+  font-size: clamp(3rem, 17vw, 4.25rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.legende {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--encre-douce);
+}
+.resume {
+  min-height: 1.4em;
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: var(--encre-douce);
+  font-variant-numeric: tabular-nums;
+}
+.alerte {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--depart);
+  font-size: 0.9rem;
+  text-align: left;
+}
+.alerte[data-genre="rappel"] { border-color: var(--pause); }
+
+/* ---------- Boutons : des jetons épais ---------- */
+
+.bouton {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--sur-couleur);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.06s, box-shadow 0.06s;
+}
+.bouton:focus-visible { outline: 3px solid var(--encre); outline-offset: 3px; }
+
+.principal {
+  margin-top: 14px;
+  min-height: 64px;
+  font-size: 1.25rem;
+  background: var(--travail);
+  box-shadow: 0 5px 0 var(--travail-tranche);
+}
+.principal[data-ton="pause"] { background: var(--pause); box-shadow: 0 5px 0 var(--pause-tranche); }
+.principal:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--travail-tranche); }
+.principal[data-ton="pause"]:active { box-shadow: 0 1px 0 var(--pause-tranche); }
+
+.zone-depart { margin-top: 15px; }
+.discret {
+  min-height: 46px;
+  background: transparent;
+  color: var(--encre);
+  border: 1.5px solid var(--bord);
+  font-weight: 600;
+}
+.discret:active { transform: translateY(1px); }
+#depart { color: var(--depart); }
+
+.confirmation { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
+.depart {
+  min-height: 46px;
+  background: var(--depart);
+  box-shadow: 0 3px 0 var(--depart-tranche);
+}
+.depart:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--depart-tranche); }
+
+/* ---------- Blocs secondaires ---------- */
+
+.bloc { margin-top: 22px; }
+.bloc h2 {
+  display: inline;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--encre-douce);
+}
+.vide { margin-top: 8px; font-size: 0.9rem; color: var(--encre-douce); }
+
+/* Parcours : une case par pointage, reliées par un pointillé. */
+.parcours { margin-top: 8px; }
+.case-ligne {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+.case-ligne + .case-ligne::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: -4px;
+  height: 10px;
+  border-left: 2px dotted var(--encre-douce);
+  opacity: 0.55;
+}
+.case {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--sur-couleur);
+  background: var(--travail);
+  box-shadow: 0 2px 0 var(--travail-tranche);
+}
+.case svg { width: 16px; height: 16px; fill: currentColor; }
+[data-type="pause"] > .case { background: var(--pause); box-shadow: 0 2px 0 var(--pause-tranche); }
+[data-type="depart"] > .case { background: var(--depart); box-shadow: 0 2px 0 var(--depart-tranche); }
+.case-nom { font-weight: 600; }
+.case-heure { margin-left: auto; font-variant-numeric: tabular-nums; }
+.pion { width: 20px; height: 20px; fill: var(--depart); flex: none; order: 1; }
+.case-ligne .case-nom { order: 0; }
+.case-ligne .case-heure { order: 2; }
+
+/* ---------- Historique ---------- */
+
+.historique > summary, .jour > summary { cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent; }
+.historique > summary::-webkit-details-marker, .jour > summary::-webkit-details-marker { display: none; }
+.historique > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-top: 1px solid var(--bord);
+}
+.historique > summary::after {
+  content: "";
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--encre-douce);
+  border-bottom: 2px solid var(--encre-douce);
+  transform: rotate(45deg);
+}
+.historique[open] > summary::after { transform: rotate(-135deg); }
+.compte {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bord);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+.compte:empty { display: none; }
+
+.jour {
+  margin-top: 8px;
+  background: var(--carte);
+  border: 1px solid var(--bord);
+  border-radius: 10px;
+  box-shadow: 0 2px 0 var(--tranche);
+}
+.jour > summary {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 6px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.jour-date { font-weight: 600; }
+.jour-heures { font-size: 0.9rem; color: var(--encre-douce); }
+.jour-net { min-width: 4.2em; text-align: right; font-weight: 700; }
+.jour-pauses { padding: 0 12px; font-size: 0.9rem; color: var(--encre-douce); }
+.jour .parcours { padding: 0 12px 10px; }
+
+summary:focus-visible { outline: 3px solid var(--encre); outline-offset: 2px; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

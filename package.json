@@ -1,0 +1,12 @@
+{
+  "name": "ludopointe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pointage des employés de la ludothèque (données conservées dans le navigateur).",
+  "type": "module",
+  "scripts": {
+    "start": "node outils/serveur.mjs",
+    "test": "node --test tests/pointage.test.js",
+    "e2e": "node tests/e2e.mjs"
+  }
+}
