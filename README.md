@@ -17,7 +17,17 @@ Site statique sans dépendance ni étape de construction : il suffit de servir l
 npm start        # http://localhost:8080
 ```
 
-Sur téléphone, « Ajouter à l'écran d'accueil » donne une icône qui ouvre l'appli en plein écran.
+## Installation sur téléphone
+
+L'appli est une application web installable : pas de magasin d'applications, un simple lien suffit.
+
+1. Ouvrir le lien de l'appli sur le téléphone.
+2. Toucher « Installer l'appli sur ce téléphone » en bas de la page
+   (sur iPhone, depuis Safari : bouton Partager, puis « Sur l'écran d'accueil »).
+
+L'icône Ludopointe apparaît alors sur l'écran d'accueil ; l'appli s'ouvre en plein écran et
+fonctionne sans réseau une fois ouverte une première fois (`sw.js` garde une copie des fichiers).
+Désinstaller l'appli ou effacer les données du navigateur efface les pointages.
 
 ## Organisation du code
 
@@ -27,6 +37,8 @@ Sur téléphone, « Ajouter à l'écran d'accueil » donne une icône qui ouvre 
 | `js/stockage.js` | Seul module qui lit et écrit les données (aujourd'hui `localStorage`, clé `ludopointe/v1`). |
 | `js/format.js` | Heures, dates et durées en français. |
 | `js/app.js` | Interface : relie les trois modules ci-dessus à la page. |
+| `js/installation.js`, `sw.js` | Installation sur l'écran d'accueil et fonctionnement hors-ligne. |
+| `outils/icones.mjs` | Régénère les icônes PNG de `icones/` à partir de `icone.svg`. |
 
 Seuls les pointages sont enregistrés (`{ type, horodatage }`). L'état et le temps net sont
 recalculés à partir des horodatages à chaque affichage : le compteur est figé en pause et reste
@@ -50,4 +62,5 @@ npm run e2e      # parcours dans Chromium au format téléphone ; demande Playwr
 ```
 
 Les parcours couvrent : journée sans pause, plusieurs pauses, départ pendant une pause,
-rechargement de la page au travail et en pause, journée restée ouverte jusqu'au lendemain.
+rechargement de la page au travail et en pause, journée restée ouverte jusqu'au lendemain,
+rechargement sans réseau, lien d'installation.

@@ -18,7 +18,7 @@ const URL_APPLI = `http://localhost:${serveur.address().port}/`;
 const navigateur = await chromium.launch();
 if (CAPTURES) await mkdir('captures', { recursive: true });
 
-async function ouvrir({ theme = 'light', debut = DEBUT } = {}) {
+async function ouvrir({ theme = 'light', debut = DEBUT, options = {}, avant = null } = {}) {
   const contexte = await navigateur.newContext({
     viewport: { width: 360, height: 640 },
     deviceScaleFactor: CAPTURES ? 2 : 1,
@@ -27,7 +27,9 @@ async function ouvrir({ theme = 'light', debut = DEBUT } = {}) {
     locale: 'fr-FR',
     timezoneId: 'Europe/Paris',
     colorScheme: theme,
+    ...options,
   });
+  if (avant) await contexte.addInitScript(avant);
   const page = await contexte.newPage();
   const erreurs = [];
   page.on('pageerror', (e) => erreurs.push(e));
@@ -40,6 +42,7 @@ async function ouvrir({ theme = 'light', debut = DEBUT } = {}) {
 
   const p = {
     page,
+    contexte,
     erreurs,
     attendre: (ms) => page.clock.fastForward(ms),
     texte: (sel) => page.locator(sel).innerText(),
@@ -240,6 +243,80 @@ const scenarios = {
     await p.verifier({ etat: 'Pas encore pointé', compteur: '0:00:00', pointages: [] });
     assert.equal((await p.donnees()).historique[0].date, '2026-11-19');
     await p.fermer();
+  },
+  async 'hors-ligne : l’appli se recharge sans réseau, pointage conservé'() {
+    const p = await ouvrir();
+    await p.action('Pointer l’arrivée'); // 09:00:00
+    await p.attendre(H);
+    await p.action('Partir en pause'); // 10:00:00
+    // Attend que la copie locale des fichiers soit prête et active.
+    await p.page.evaluate(() => navigator.serviceWorker.ready);
+    await p.page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+    await p.contexte.setOffline(true);
+    p.erreurs.length = 0;
+    await p.recharger();
+    await p.attendre(30 * MIN);
+    await p.verifier({
+      etat: 'En pause depuis 10:00',
+      compteur: '1:00:00',
+      principal: 'Reprendre le travail',
+      pointages: ['Arrivée 09:00:00', 'Début de pause 10:00:00'],
+    });
+    // Styles et icônes viennent bien de la copie locale.
+    assert.equal(await p.page.evaluate(() => getComputedStyle(document.querySelector('.carte')).borderRadius), '14px');
+    assert.equal(await p.page.evaluate(() => fetch('icones/icone-192.png').then((r) => r.ok)), true);
+    await p.action('Reprendre le travail');
+    await p.verifier({ etat: 'Au travail' });
+    await p.fermer();
+  },
+
+  async 'installation : manifeste, icônes et lien « Installer »'() {
+    // Navigateur ordinaire : pas de lien tant que le navigateur ne propose pas l'installation.
+    const p = await ouvrir();
+    const lien = p.page.locator('#installer');
+    assert.equal(await lien.isVisible(), false);
+    const manifeste = await p.page.evaluate(() => fetch(document.querySelector('link[rel=manifest]').href).then((r) => r.json()));
+    assert.equal(manifeste.display, 'standalone');
+    for (const icone of manifeste.icons) {
+      const taille = await p.page.evaluate(async (src) => {
+        const image = await createImageBitmap(await (await fetch(src)).blob());
+        return `${image.width}x${image.height}`;
+      }, icone.src);
+      assert.equal(taille, icone.sizes, icone.src);
+    }
+    // Android : le navigateur propose l'installation, le lien apparaît et la déclenche.
+    await p.page.evaluate(() => {
+      const e = new Event('beforeinstallprompt', { cancelable: true });
+      e.prompt = () => { window.inviteMontree = true; };
+      e.userChoice = Promise.resolve({ outcome: 'accepted' });
+      window.dispatchEvent(e);
+    });
+    assert.equal(await lien.isVisible(), true);
+    await p.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await p.capture('8-lien-installer');
+    await lien.tap();
+    assert.equal(await p.page.evaluate(() => window.inviteMontree), true);
+    assert.equal(await lien.isVisible(), false);
+    await p.fermer();
+
+    // iPhone : le lien affiche la marche à suivre.
+    const iphone = await ouvrir({
+      options: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' },
+    });
+    assert.equal(await iphone.page.locator('#installer-aide').isVisible(), false);
+    await iphone.page.locator('#installer').tap();
+    assert.match(await iphone.texte('#installer-aide'), /Partager, puis « Sur l’écran d’accueil »/);
+    await iphone.visibleSansDefiler('#action-principale');
+    await iphone.fermer();
+
+    // Appli déjà installée : aucun lien.
+    const installee = await ouvrir({
+      options: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1' },
+      avant: () => Object.defineProperty(navigator, 'standalone', { value: true }),
+    });
+    assert.equal(await installee.page.locator('#installer').isVisible(), false);
+    await installee.fermer();
   },
 };
 

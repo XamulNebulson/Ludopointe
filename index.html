@@ -9,7 +9,9 @@
   <meta name="theme-color" content="#1e2024" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icone.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icone.svg">
+  <link rel="apple-touch-icon" href="icones/icone-apple-180.png">
+  <meta name="apple-mobile-web-app-title" content="Ludopointe">
+  <meta name="mobile-web-app-capable" content="yes">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -69,7 +71,13 @@
     </details>
   </main>
 
+  <footer class="pied">
+    <button id="installer" class="lien" type="button" hidden>Installer l’appli sur ce téléphone</button>
+    <p id="installer-aide" class="vide" hidden>Dans Safari, touchez le bouton Partager, puis « Sur l’écran d’accueil ».</p>
+  </footer>
+
   <noscript><p class="alerte">Ludopointe a besoin de JavaScript pour fonctionner.</p></noscript>
   <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/installation.js"></script>
 </body>
 </html>
