@@ -107,3 +107,74 @@ export function bilan(journee, maintenant = new Date()) {
   resultat.depuis = pointages.at(-1).horodatage;
   return resultat;
 }
+
+// ---------- Corrections ----------
+
+/** Heure refusée lors d'une correction. `min` et `max` (ISO) bornent ce qui aurait été accepté ; null si l'heure est illisible. */
+export class ErreurCorrection extends Error {
+  constructor(index, min, max, jusquAMaintenant) {
+    super(`Heure refusée pour le pointage n° ${index + 1}.`);
+    this.name = 'ErreurCorrection';
+    Object.assign(this, { index, min, max, jusquAMaintenant });
+  }
+}
+
+/**
+ * Corrige des heures d'une journée et renvoie une nouvelle journée.
+ * `heures[i]` vaut « HH:MM » pour changer le pointage i, null pour le garder tel quel.
+ *
+ * Les pointages doivent rester dans l'ordre : chaque heure corrigée se situe entre le
+ * pointage précédent et le prochain pointage conservé (ou maintenant s'il n'y en a pas).
+ * Une correction se fait à la minute ; elle est marquée `corrige: true`, ce qui la
+ * distingue d'un pointage pris sur l'horloge de l'appareil.
+ *
+ * L'heure est cherchée le jour du pointage d'origine, sinon la veille (départ oublié puis
+ * pointé le lendemain). L'arrivée ne change jamais de jour.
+ */
+export function corrigerHeures(journee, heures, maintenant) {
+  const anciens = journee.pointages;
+  const present = Math.floor(maintenant.getTime() / 1000) * 1000;
+  const iso = (ms) => new Date(ms).toISOString();
+  const nouveaux = [];
+
+  for (let i = 0; i < anciens.length; i++) {
+    const ancien = anciens[i];
+    const voulue = heures[i] ?? null;
+    if (voulue === null) {
+      nouveaux.push(ancien);
+      continue;
+    }
+    const lue = /^(\d{1,2}):(\d{2})$/.exec(voulue);
+    if (!lue || Number(lue[1]) > 23 || Number(lue[2]) > 59) throw new ErreurCorrection(i, null, null, false);
+
+    const min = i > 0 ? Date.parse(nouveaux[i - 1].horodatage) : null;
+    const conserve = anciens.findIndex((_, k) => k > i && (heures[k] ?? null) === null);
+    const max = conserve === -1 ? present : Date.parse(anciens[conserve].horodatage);
+
+    const origine = new Date(ancien.horodatage);
+    let instant = null;
+    for (const decalage of i === 0 ? [0] : [0, -1]) {
+      const debut = new Date(
+        origine.getFullYear(), origine.getMonth(), origine.getDate() + decalage, Number(lue[1]), Number(lue[2]),
+      ).getTime();
+      // La minute demandée doit recouper l'intervalle permis ; on y prend le premier instant possible.
+      if (debut > max || (min !== null && debut + 59_000 < min)) continue;
+      instant = min === null ? debut : Math.max(debut, min);
+      break;
+    }
+    if (instant === null) throw new ErreurCorrection(i, min === null ? null : iso(min), iso(max), conserve === -1);
+
+    const horodatage = iso(instant);
+    nouveaux.push(horodatage === ancien.horodatage ? ancien : { ...ancien, horodatage, corrige: true });
+  }
+
+  const corrigee = { ...journee, pointages: nouveaux };
+  etat(corrigee); // lève une erreur si la suite n'est plus valide
+  return corrigee;
+}
+
+/** Retire le dernier pointage. Renvoie null s'il ne restait que l'arrivée. */
+export function annulerDernier(journee) {
+  if (journee.pointages.length <= 1) return null;
+  return { ...journee, pointages: journee.pointages.slice(0, -1) };
+}

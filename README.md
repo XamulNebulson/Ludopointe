@@ -5,6 +5,7 @@ Appli de pointage pour les employés d'une ludothèque, pensée pour le téléph
 - Pointer l'arrivée, autant de pauses et de reprises que nécessaire, puis le départ (y compris pendant une pause).
 - État en cours, temps de travail net, détail des pointages du jour, historique des journées terminées.
 - Chaque pointage est horodaté à la seconde avec l'horloge de l'appareil.
+- Corriger une heure, retirer un pointage fait par erreur, supprimer une journée ou tout l'historique.
 - Les données restent dans le navigateur de l'appareil (`localStorage`) : ni compte, ni synchronisation, ni partage.
   Un appareil correspond donc à une personne. Effacer les données du site dans le navigateur efface les pointages.
 
@@ -45,22 +46,46 @@ recalculés à partir des horodatages à chaque affichage : le compteur est fig�
 exact après rechargement.
 
 Pour centraliser les données plus tard, il suffira de remplacer `js/stockage.js` par un module
-offrant les quatre mêmes méthodes asynchrones ; le reste du code n'a pas à changer.
+offrant les mêmes méthodes asynchrones (listées en tête du fichier) ; le reste du code n'a pas à changer.
 
 Cas particuliers :
 
 - Une journée appartient à la date de son arrivée. Si le départ a été oublié, elle reste ouverte
-  et un rappel s'affiche le lendemain ; elle peut alors être clôturée.
+  et un rappel s'affiche le lendemain ; elle peut alors être clôturée, puis son heure de départ corrigée.
 - Pointer une nouvelle arrivée après un départ ouvre une nouvelle journée (deux lignes dans l'historique).
-- Les pointages ne peuvent pas être corrigés ni supprimés depuis l'appli.
+
+## Corrections et suppressions
+
+- **Corriger des heures** : lien « Corriger » des pointages du jour, ou d'une journée dépliée de
+  l'historique. Les heures deviennent modifiables, à la minute ; rien n'est enregistré avant
+  « Enregistrer ». Les pointages doivent rester dans l'ordre et ne peuvent pas être dans le futur.
+  Une heure corrigée est enregistrée avec `corrige: true` et affichée avec un crayon : on la
+  distingue toujours d'un pointage pris sur l'horloge de l'appareil.
+- **Retirer le dernier pointage** (en mode correction du jour) : pour un appui par erreur. Retirer
+  un départ rouvre la journée.
+- **Supprimer une journée** : dans la journée dépliée de l'historique.
+- **Effacer tout l'historique** : en bas de l'historique ; la journée en cours n'est pas touchée.
+
+Garde-fous contre une suppression par mégarde :
+
+- aucune suppression n'est accessible sans avoir déplié l'historique puis une journée ;
+- chaque suppression pose une question, qui se referme seule après 8 secondes ; le bouton de
+  confirmation n'apparaît pas sous le doigt et ignore un double appui ;
+- tout effacer demande en plus de saisir le mot EFFACER ;
+- après une suppression, un bandeau « Rétablir » reste 10 secondes à l'écran.
+
+Il n'est pas possible d'ajouter un pointage oublié au milieu d'une journée, ni de retirer une
+pause autrement qu'en donnant la même heure à son début et à sa reprise.
 
 ## Tests
 
 ```bash
 npm test         # logique et stockage (Node 20+)
 npm run e2e      # parcours dans Chromium au format téléphone ; demande Playwright (npm i -g playwright)
+NAVIGATEUR=chrome npm run e2e   # avec le Chrome déjà installé (ou msedge)
 ```
 
 Les parcours couvrent : journée sans pause, plusieurs pauses, départ pendant une pause,
 rechargement de la page au travail et en pause, journée restée ouverte jusqu'au lendemain,
-rechargement sans réseau, lien d'installation.
+rechargement sans réseau, lien d'installation, correction d'heures (acceptée, refusée, annulée),
+retrait du dernier pointage, suppression d'une journée et de tout l'historique avec leurs garde-fous.

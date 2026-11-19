@@ -309,6 +309,86 @@ ol, ul { padding: 0; list-style: none; }
 }
 .lien:focus-visible { outline: 3px solid var(--encre); outline-offset: 2px; border-radius: 8px; }
 
+/* ---------- Corrections et suppressions ---------- */
+
+.bloc-titre { display: flex; align-items: center; justify-content: space-between; }
+.bloc-titre .lien { margin-block: -12px; padding-right: 0; }
+.lien.danger { color: var(--depart); }
+
+/* Heure corrigée à la main : un petit crayon devant l'heure. */
+.corrige { order: 2; margin-left: auto; display: flex; color: var(--encre-douce); }
+.corrige svg { width: 13px; height: 13px; }
+.corrige + .case-heure { margin-left: -6px; }
+.discret-lecteur {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* En correction, chaque heure est un champ de saisie. */
+.case-saisie, .saisie-mot {
+  min-height: 42px;
+  padding: 4px 8px;
+  border: 1.5px solid var(--tranche);
+  border-radius: 8px;
+  background: var(--carte);
+  color: var(--encre);
+  font: inherit; /* 16 px : évite le zoom automatique sur iPhone */
+  font-variant-numeric: tabular-nums;
+}
+.case-saisie { margin-left: auto; }
+.case-saisie[aria-invalid="true"] { border-color: var(--depart); outline: 2px solid var(--depart); }
+.case-saisie:focus-visible, .saisie-mot:focus-visible { outline: 3px solid var(--encre); outline-offset: 1px; }
+.parcours.edition .case-ligne + .case-ligne::before { top: -10px; height: 22px; }
+.saisie-mot { display: block; width: 100%; margin-top: 8px; letter-spacing: 0.08em; }
+
+.outils .alerte, #outils-jour .alerte { margin-top: 8px; }
+.jour .outils { padding: 0 12px 10px; }
+.outils.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding-bottom: 2px; }
+.outils.actions .lien:first-child { padding-left: 0; }
+.outils.actions .deux-temps > .lien { padding-right: 0; }
+.deux-temps.ouvert { flex: 1 1 100%; padding-bottom: 8px; }
+#outils-jour .deux-temps, #effacer-tout { margin-top: 6px; text-align: center; }
+
+.question { margin-top: 8px; font-size: 0.95rem; text-align: left; }
+.choix { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.choix .bouton { min-height: 46px; }
+.valider { background: var(--travail); box-shadow: 0 3px 0 var(--travail-tranche); }
+.valider:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--travail-tranche); }
+.bouton:disabled { opacity: 0.4; box-shadow: none; cursor: default; }
+
+/* Rétablir une suppression : bandeau provisoire en bas de l'écran. */
+.retablir {
+  position: fixed;
+  z-index: 10;
+  left: 16px;
+  right: 16px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  max-width: 440px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--encre);
+  color: var(--fond);
+  font-size: 0.95rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.retablir span { flex: 1; }
+.retablir .bouton {
+  width: auto;
+  min-height: 42px;
+  padding: 0 16px;
+  background: transparent;
+  color: inherit;
+  border: 1.5px solid currentColor;
+}
+
 summary:focus-visible { outline: 3px solid var(--encre); outline-offset: 2px; border-radius: 8px; }
 
 @media (prefers-reduced-motion: reduce) {

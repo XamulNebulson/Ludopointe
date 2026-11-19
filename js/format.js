@@ -11,6 +11,11 @@ const fmtDateLongue = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: '
 export const heure = (instant) => fmtHeure.format(new Date(instant));
 /** « 14:05 » */
 export const heureCourte = (instant) => fmtHeureCourte.format(new Date(instant));
+/** « 14:05 », au format attendu par un champ de saisie d'heure. */
+export function heureSaisie(instant) {
+  const d = new Date(instant);
+  return `${deux(d.getHours())}:${deux(d.getMinutes())}`;
+}
 /** « jeu. 19 nov. » */
 export const dateCourte = (instant) => fmtDate.format(new Date(instant));
 /** « jeudi 19 novembre » */

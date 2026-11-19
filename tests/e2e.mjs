@@ -15,7 +15,8 @@ const H = 60 * MIN;
 
 const serveur = await demarrer();
 const URL_APPLI = `http://localhost:${serveur.address().port}/`;
-const navigateur = await chromium.launch();
+// NAVIGATEUR=chrome (ou msedge) utilise le navigateur déjà installé plutôt que celui de Playwright.
+const navigateur = await chromium.launch({ channel: process.env.NAVIGATEUR || undefined });
 if (CAPTURES) await mkdir('captures', { recursive: true });
 
 async function ouvrir({ theme = 'light', debut = DEBUT, options = {}, avant = null } = {}) {
@@ -317,6 +318,311 @@ const scenarios = {
     });
     assert.equal(await installee.page.locator('#installer').isVisible(), false);
     await installee.fermer();
+  },
+
+  async 'correction des heures : enregistrée seulement après validation, bornes respectées'() {
+    const p = await ouvrir();
+    const { page } = p;
+    await p.action('Pointer l’arrivée'); // 09:00:00
+    await p.attendre(90 * MIN);
+    await p.action('Partir en pause'); // 10:30:00
+    await p.attendre(20 * MIN);
+    await p.action('Reprendre le travail'); // 10:50:00
+    await p.attendre(H); // 11:50:00
+    await p.verifier({ compteur: '2:30:00' });
+
+    const saisies = page.locator('#pointages .case-saisie');
+    const enregistrer = page.locator('#outils-jour .valider');
+    const refus = page.locator('#outils-jour .alerte');
+    const valeurs = () => saisies.evaluateAll((champs) => champs.map((c) => c.value));
+    const reprise = async () => (await p.donnees()).enCours.pointages[2];
+
+    assert.equal(await saisies.count(), 0);
+    await page.locator('#corriger-jour').tap();
+    assert.deepEqual(await valeurs(), ['09:00', '10:30', '10:50']);
+    assert.equal(await enregistrer.isDisabled(), true);
+
+    // La reprise a en fait eu lieu à 10:40. Rien n'est enregistré avant « Enregistrer ».
+    await saisies.nth(2).fill('10:40');
+    assert.equal(await enregistrer.isDisabled(), false);
+    assert.equal((await reprise()).horodatage, '2026-11-19T09:50:00.000Z');
+    await p.capture('9-correction');
+    await enregistrer.tap();
+    await p.verifier({
+      etat: 'Au travail',
+      compteur: '2:40:00',
+      pointages: ['Arrivée 09:00:00', 'Début de pause 10:30:00', 'Reprise 10:40:00'],
+    });
+    assert.deepEqual(await reprise(), { type: 'reprise', horodatage: '2026-11-19T09:40:00.000Z', corrige: true });
+    assert.deepEqual(Object.keys((await p.donnees()).enCours.pointages[0]).sort(), ['horodatage', 'type']);
+    // Seule l'heure corrigée porte la marque, et le compteur continue d'avancer.
+    assert.equal(await page.locator('#pointages .corrige').count(), 1);
+    assert.equal(await page.locator('#pointages .case-ligne').nth(2).locator('.corrige').count(), 1);
+    await p.attendre(10 * MIN); // 12:00:00
+    await p.verifier({ compteur: '2:50:00' });
+    await p.capture('10-heure-corrigee');
+
+    // Une pause qui commencerait après la reprise est refusée ; la saisie reste, les données aussi.
+    await page.locator('#corriger-jour').tap();
+    await saisies.nth(1).fill('11:00');
+    await enregistrer.tap();
+    assert.equal(await refus.innerText(), '« Début de pause » : l’heure doit être comprise entre 09:00 et 10:40.');
+    assert.equal(await saisies.nth(1).getAttribute('aria-invalid'), 'true');
+    assert.deepEqual(await valeurs(), ['09:00', '11:00', '10:40']);
+    assert.equal((await p.donnees()).enCours.pointages[1].horodatage, '2026-11-19T09:30:00.000Z');
+    await p.capture('11-correction-refusee');
+
+    // Une heure dans le futur est refusée.
+    await saisies.nth(1).fill('10:30');
+    await saisies.nth(2).fill('13:00');
+    await enregistrer.tap();
+    assert.equal(await refus.innerText(), '« Reprise » : l’heure doit être comprise entre 10:30 et maintenant.');
+
+    // Deux heures corrigées ensemble : la pause entière est avancée.
+    await saisies.nth(1).fill('10:00');
+    await saisies.nth(2).fill('10:15');
+    await enregistrer.tap();
+    await p.verifier({
+      compteur: '2:45:00',
+      pointages: ['Arrivée 09:00:00', 'Début de pause 10:00:00', 'Reprise 10:15:00'],
+    });
+    assert.equal(await page.locator('#pointages .corrige').count(), 2);
+
+    // « Annuler » abandonne la saisie.
+    await page.locator('#corriger-jour').tap();
+    await saisies.nth(0).fill('07:00');
+    await page.locator('#outils-jour > .choix .discret').tap();
+    assert.equal(await saisies.count(), 0);
+    await p.verifier({ compteur: '2:45:00', pointages: ['Arrivée 09:00:00', 'Début de pause 10:00:00', 'Reprise 10:15:00'] });
+
+    // Tout cela survit au rechargement.
+    await p.recharger();
+    await p.verifier({ etat: 'Au travail', compteur: '2:45:00', principal: 'Partir en pause' });
+    assert.equal(await page.locator('#pointages .corrige').count(), 2);
+    await p.fermer();
+  },
+
+  async 'retirer le dernier pointage : appui par erreur, départ par erreur, rétablissement'() {
+    const p = await ouvrir();
+    const { page } = p;
+    const retirer = page.locator('#outils-jour .deux-temps > .lien');
+    const question = page.locator('#outils-jour .demande');
+    const confirmer = page.locator('#outils-jour .demande .depart');
+    const bandeau = page.locator('#retablir');
+
+    await p.action('Pointer l’arrivée'); // 09:00:00
+    await p.attendre(H);
+    await p.action('Partir en pause'); // 10:00:00, par erreur
+    await p.attendre(5_000);
+
+    // Sans réponse, la question se referme et rien n'est retiré.
+    await page.locator('#corriger-jour').tap();
+    await retirer.tap();
+    assert.equal(await question.locator('.question').innerText(), 'Retirer « Début de pause » de 10:00 ?');
+    await p.attendre(8_000); // 10:00:13
+    assert.equal(await question.isVisible(), false);
+    assert.equal(await retirer.isVisible(), true);
+
+    // Un double appui ne confirme pas.
+    await retirer.tap();
+    await confirmer.tap();
+    await p.verifier({ etat: 'En pause depuis 10:00' });
+    await p.attendre(1_000); // 10:00:14
+    await confirmer.tap();
+    await p.verifier({ etat: 'Au travail', compteur: '1:00:14', principal: 'Partir en pause', pointages: ['Arrivée 09:00:00'] });
+    assert.equal(await page.locator('#retablir-texte').innerText(), 'Dernier pointage retiré.');
+    await p.capture('12-pointage-retire');
+
+    // « Rétablir » remet le pointage tel qu'il était, à la seconde.
+    await page.locator('#retablir-bouton').tap();
+    await p.verifier({ etat: 'En pause depuis 10:00', compteur: '1:00:00', pointages: ['Arrivée 09:00:00', 'Début de pause 10:00:00'] });
+    assert.equal(await bandeau.isVisible(), false);
+
+    // Retiré pour de bon : le bandeau disparaît de lui-même.
+    await page.locator('#corriger-jour').tap();
+    await retirer.tap();
+    await p.attendre(1_000);
+    await confirmer.tap();
+    assert.equal(await bandeau.isVisible(), true);
+    await p.attendre(10_000); // 10:00:25
+    assert.equal(await bandeau.isVisible(), false);
+    await p.verifier({ etat: 'Au travail', pointages: ['Arrivée 09:00:00'] });
+
+    // Départ pointé par erreur : le retirer rouvre la journée, qui quitte l'historique.
+    await p.depart();
+    await p.verifier({ etat: 'Journée terminée', principal: 'Pointer l’arrivée' });
+    assert.equal((await p.donnees()).historique.length, 1);
+    await page.locator('#corriger-jour').tap();
+    await retirer.tap();
+    assert.equal(await question.locator('.question').innerText(), 'Retirer « Départ » de 10:00 ?');
+    await p.attendre(1_000);
+    await confirmer.tap();
+    await p.verifier({ etat: 'Au travail', principal: 'Partir en pause', pointages: ['Arrivée 09:00:00'] });
+    let donnees = await p.donnees();
+    assert.equal(donnees.historique.length, 0);
+    assert.equal(donnees.enCours.pointages.length, 1);
+    await page.locator('#retablir-bouton').tap();
+    await p.verifier({ etat: 'Journée terminée', principal: 'Pointer l’arrivée' });
+    donnees = await p.donnees();
+    assert.equal(donnees.historique.length, 1);
+    assert.equal(donnees.enCours, null);
+
+    // Retirer l'arrivée d'une journée tout juste commencée la fait disparaître.
+    await p.action('Pointer l’arrivée');
+    await page.locator('#corriger-jour').tap();
+    await retirer.tap();
+    await p.attendre(1_000);
+    await confirmer.tap();
+    assert.equal((await p.donnees()).enCours, null);
+    assert.equal((await p.donnees()).historique.length, 1);
+    await p.fermer();
+  },
+
+  async 'historique : supprimer une journée, tout effacer, jamais par mégarde'() {
+    const p = await ouvrir();
+    const { page } = p;
+    // Trois journées terminées (16, 17 et 18 novembre, 9 h – 17 h) et une journée en cours depuis 8 h 30.
+    await page.evaluate(() => {
+      const jour = (n) => ({
+        id: `2026-11-${n}T08:00:00.000Z`,
+        date: `2026-11-${n}`,
+        pointages: [
+          { type: 'arrivee', horodatage: `2026-11-${n}T08:00:00.000Z` },
+          { type: 'depart', horodatage: `2026-11-${n}T16:00:00.000Z` },
+        ],
+      });
+      const enCours = {
+        id: '2026-11-19T07:30:00.000Z',
+        date: '2026-11-19',
+        pointages: [{ type: 'arrivee', horodatage: '2026-11-19T07:30:00.000Z' }],
+      };
+      localStorage.setItem('ludopointe/v1', JSON.stringify({ enCours, historique: [jour(17), jour(18), jour(16)] }));
+    });
+    await p.recharger();
+
+    const jours = page.locator('#historique-liste .jour');
+    const dates = () => page.locator('#historique-liste .jour-date').allInnerTexts();
+    const ouvrirHistorique = () => page.locator('#historique > summary').tap();
+    const bandeau = page.locator('#retablir');
+    const nbEnregistrees = async () => (await p.donnees()).historique.length;
+
+    await ouvrirHistorique();
+    assert.deepEqual(await dates(), ['mer. 18 nov.', 'mar. 17 nov.', 'lun. 16 nov.']);
+    // Rien ne permet de supprimer tant qu'une journée n'est pas dépliée.
+    assert.equal(await page.locator('#historique-liste .lien:visible').count(), 0);
+
+    const jour17 = jours.nth(1);
+    const supprimer = jour17.locator('.deux-temps > .lien');
+    const question = jour17.locator('.demande');
+    const confirmer = jour17.locator('.demande .depart');
+    await jour17.locator('summary').tap();
+
+    // « Garder » : rien ne change.
+    await supprimer.tap();
+    assert.equal(await question.locator('.question').innerText(), 'Supprimer définitivement la journée du mar. 17 nov. ?');
+    await p.capture('13-supprimer-journee');
+    await question.locator('.discret').tap();
+    assert.equal(await question.isVisible(), false);
+    assert.equal(await nbEnregistrees(), 3);
+
+    // Sans réponse pendant 8 secondes : la question se referme.
+    await supprimer.tap();
+    await p.attendre(8_000);
+    assert.equal(await question.isVisible(), false);
+    assert.equal(await nbEnregistrees(), 3);
+
+    // Double appui : ignoré. Confirmation posée : la journée disparaît, les autres restent.
+    await supprimer.tap();
+    await confirmer.tap();
+    assert.equal(await nbEnregistrees(), 3);
+    await p.attendre(1_000);
+    await confirmer.tap();
+    assert.deepEqual(await dates(), ['mer. 18 nov.', 'lun. 16 nov.']);
+    assert.equal(await nbEnregistrees(), 2);
+    assert.equal(await page.locator('#retablir-texte').innerText(), 'Journée du mar. 17 nov. supprimée.');
+    await p.capture('14-journee-supprimee');
+
+    // « Rétablir » la remet à sa place.
+    await page.locator('#retablir-bouton').tap();
+    assert.deepEqual(await dates(), ['mer. 18 nov.', 'mar. 17 nov.', 'lun. 16 nov.']);
+    assert.equal(await nbEnregistrees(), 3);
+    assert.equal(await bandeau.isVisible(), false);
+
+    // Supprimée pour de bon : le bandeau s'efface, et la suppression survit au rechargement.
+    await jour17.locator('summary').tap();
+    await supprimer.tap();
+    await p.attendre(1_000);
+    await confirmer.tap();
+    await p.attendre(10_000);
+    assert.equal(await bandeau.isVisible(), false);
+    await p.recharger();
+    await ouvrirHistorique();
+    assert.deepEqual(await dates(), ['mer. 18 nov.', 'lun. 16 nov.']);
+
+    // Corriger une journée de l'historique : départ à 16:30 au lieu de 17:00.
+    const jour18 = jours.nth(0);
+    await jour18.locator('summary').tap();
+    await jour18.locator('.outils > .lien').tap();
+    assert.deepEqual(await jour18.locator('.case-saisie').evaluateAll((c) => c.map((s) => s.value)), ['09:00', '17:00']);
+    await jour18.locator('.case-saisie').nth(1).fill('16:30');
+    await jour18.locator('.valider').tap();
+    assert.match(await jour18.locator('summary').innerText(), /mer\. 18 nov\.\s+09:00 – 16:30\s+7 h 30/);
+    assert.equal(await jour18.locator('.corrige').count(), 1);
+    assert.equal(await jour18.locator('.case-saisie').count(), 0);
+    // La journée en cours n'a pas bougé.
+    await p.verifier({ etat: 'Au travail', pointages: ['Arrivée 08:30:00'] });
+    await p.capture('15-historique-corrige');
+
+    // Tout effacer : il faut saisir le mot.
+    const effacer = page.locator('#effacer-tout > .lien');
+    const mot = page.locator('#effacer-mot');
+    const toutEffacer = page.locator('#effacer-tout .depart');
+    await effacer.tap();
+    assert.match(await page.locator('#effacer-tout .question').innerText(), /les 2 journées de l’historique, saisissez EFFACER/);
+    assert.equal(await toutEffacer.isDisabled(), true);
+    await toutEffacer.tap({ force: true });
+    await mot.fill('EFFACE');
+    assert.equal(await toutEffacer.isDisabled(), true);
+    await toutEffacer.tap({ force: true });
+    assert.equal(await nbEnregistrees(), 2);
+    await p.capture('16-tout-effacer');
+    // « Garder » referme et vide la saisie.
+    await mot.fill('EFFACER');
+    await page.locator('#effacer-tout .discret').tap();
+    assert.equal(await nbEnregistrees(), 2);
+    await effacer.tap();
+    assert.equal(await mot.inputValue(), '');
+    assert.equal(await toutEffacer.isDisabled(), true);
+
+    await mot.fill('effacer');
+    assert.equal(await toutEffacer.isDisabled(), false);
+    await toutEffacer.tap();
+    assert.equal(await jours.count(), 0);
+    assert.equal(await page.locator('#historique-vide').isVisible(), true);
+    assert.equal(await page.locator('#effacer-tout > .lien').count(), 0);
+    assert.equal(await page.locator('#retablir-texte').innerText(), '2 journées supprimées.');
+    // La journée en cours est intacte.
+    let donnees = await p.donnees();
+    assert.equal(donnees.historique.length, 0);
+    assert.equal(donnees.enCours.pointages[0].horodatage, '2026-11-19T07:30:00.000Z');
+    await p.verifier({ etat: 'Au travail', principal: 'Partir en pause' });
+
+    // « Rétablir » rend les deux journées, correction comprise.
+    await page.locator('#retablir-bouton').tap();
+    assert.deepEqual(await dates(), ['mer. 18 nov.', 'lun. 16 nov.']);
+    donnees = await p.donnees();
+    assert.equal(donnees.historique.length, 2);
+    assert.equal(donnees.historique.flatMap((j) => j.pointages).filter((q) => q.corrige).length, 1);
+
+    // Effacé pour de bon.
+    await effacer.tap();
+    await mot.fill('EFFACER');
+    await toutEffacer.tap();
+    await p.attendre(10_000);
+    await p.recharger();
+    assert.equal((await p.donnees()).historique.length, 0);
+    await p.verifier({ etat: 'Au travail', pointages: ['Arrivée 08:30:00'] });
+    await p.fermer();
   },
 };
 
